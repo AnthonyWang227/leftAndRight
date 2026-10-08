@@ -256,8 +256,23 @@
                     <h3 class="text-xs font-bold text-gray-300 uppercase tracking-wider font-orbitron flex items-center gap-1.5">
                         <i class="fa-solid fa-sliders text-fuchsia-400"></i> 模型類別對應設定 (Class Mapping)
                     </h3>
+                    <!-- Quick Swap Button -->
+                    <button id="swap-left-right-btn" class="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-cyan-400 border border-cyan-500/30 rounded text-[10px] font-bold transition flex items-center gap-1 active:scale-95">
+                        <i class="fa-solid fa-arrows-rotate"></i> 一鍵對調左右
+                    </button>
                 </div>
                 <p class="text-[11px] text-gray-400">系統會自動依名稱比對，如有誤可手動選擇對應的 Class：</p>
+
+                <!-- Mirror Camera Input Checkbox -->
+                <div class="flex items-center justify-between bg-black/40 p-2.5 rounded-lg border border-gray-800 text-xs">
+                    <span class="text-gray-300 font-bold flex items-center gap-1.5">
+                        <i class="fa-solid fa-arrows-left-right text-cyan-400"></i> AI 輸入影像水平翻轉 (Mirror)
+                    </span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggle-mirror-input" class="sr-only peer" checked>
+                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+                    </label>
+                </div>
 
                 <div class="grid grid-cols-1 gap-2 text-xs">
                     <div class="flex items-center justify-between bg-black/40 p-2 rounded-lg border border-gray-800">
@@ -728,7 +743,17 @@
                         const sx = (vw - minDim) / 2;
                         const sy = (vh - minDim) / 2;
 
+                        // Check if input image mirroring is enabled (Matches Teachable Machine webcam recorder defaults)
+                        const isMirrored = document.getElementById('toggle-mirror-input')?.checked ?? true;
+
+                        cropCtx.save();
+                        cropCtx.clearRect(0, 0, 224, 224);
+                        if (isMirrored) {
+                            cropCtx.translate(224, 0);
+                            cropCtx.scale(-1, 1);
+                        }
                         cropCtx.drawImage(video, sx, sy, minDim, minDim, 0, 0, 224, 224);
+                        cropCtx.restore();
                         
                         if (modelType === 'pose') {
                             const { pose, posenetOutput } = await model.estimatePose(cropCanvas);
@@ -988,6 +1013,18 @@
         document.getElementById('settings-btn').addEventListener('click', () => {
             const panel = document.getElementById('label-mapping-panel');
             if (panel) panel.scrollIntoView({ behavior: 'smooth' });
+        });
+
+        // Swap Left and Right Mapping Selection Button
+        document.getElementById('swap-left-right-btn')?.addEventListener('click', () => {
+            const leftSel = document.getElementById('select-map-left');
+            const rightSel = document.getElementById('select-map-right');
+            if (leftSel && rightSel) {
+                const temp = leftSel.value;
+                leftSel.value = rightSel.value;
+                rightSel.value = temp;
+                showNotification("已對調左右手的 Model Class 對應選項！", "success");
+            }
         });
     </script>
 </body>
