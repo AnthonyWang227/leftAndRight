@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>賽博手勢武道館 Cyber Gesture Dojo</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- TensorFlow.js & Teachable Machine Image & Pose Engines -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8.6/dist/teachablemachine-pose.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #0d1117;
+            color: #f0f6fc;
+            overflow-x: hidden;
+        }
+
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .neon-glow-cyan {
+            text-shadow: 0 0 12px rgba(6, 182, 212, 0.8), 0 0 24px rgba(6, 182, 212, 0.4);
+        }
+
+        .neon-glow-pink {
+            text-shadow: 0 0 12px rgba(236, 72, 153, 0.8), 0 0 24px rgba(236, 72, 153, 0.4);
+        }
+
+        .box-glow-cyan {
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.4), inset 0 0 15px rgba(6, 182, 212, 0.2);
+        }
+
+        .box-glow-pink {
+            box-shadow: 0 0 20px rgba(236, 72, 153, 0.4), inset 0 0 15px rgba(236, 72, 153, 0.2);
+        }
+
+        /* Scanline Overlay Effect */
+        .scanlines {
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0, 0, 0, 0.25) 50%,
+                rgba(0, 0, 0, 0.25)
+            );
+            background-size: 100% 4px;
+        }
+
+        @keyframes pulse-fast {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.02); }
+        }
+
+        .animate-pulse-fast {
+            animation: pulse-fast 0.6s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between scanlines relative select-none">
+
+    <!-- Header Navigation -->
+    <header class="border-b border-gray-800 bg-gray-950/90 backdrop-blur sticky top-0 z-50 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-fuchsia-500 flex items-center justify-center text-black font-black text-xl shadow-lg">
+                    <i class="fa-solid fa-hand-fist"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-black font-orbitron tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-purple-500">
+                        CYBER GESTURE DOJO
+                    </h1>
+                    <p class="text-xs text-gray-400">Teachable Machine 體感動作偵測測試儀</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <!-- Audio Toggle -->
+                <button id="audio-toggle" class="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 transition text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-volume-high text-cyan-400" id="audio-icon"></i>
+                    <span id="audio-status">音效開啟</span>
+                </button>
+                <!-- Model Settings Jump Button -->
+                <button id="settings-btn" class="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 transition text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-gear text-fuchsia-400"></i>
+                    <span>模型設定</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Game Container -->
+    <main class="max-w-7xl mx-auto w-full px-4 py-6 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left Column: Primary Game Arena (8 cols) -->
+        <section class="lg:col-span-8 flex flex-col gap-4">
+            
+            <!-- Dynamic Notification / Error Banner -->
+            <div id="status-notification-bar" class="hidden p-3 rounded-xl border text-xs font-bold flex items-center justify-between transition-all">
+                <div class="flex items-center gap-2" id="notification-text">
+                    <!-- Dynamic status text -->
+                </div>
+                <button onclick="document.getElementById('status-notification-bar').classList.add('hidden')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- HUD Stats Header -->
+            <div class="grid grid-cols-3 gap-3 bg-gray-900/90 border border-gray-800 rounded-2xl p-4">
+                <div class="text-center border-r border-gray-800">
+                    <div class="text-xs text-gray-400 font-orbitron uppercase">Score 分數</div>
+                    <div id="hud-score" class="text-3xl font-black font-orbitron text-cyan-400 neon-glow-cyan">0</div>
+                </div>
+                <div class="text-center border-r border-gray-800">
+                    <div class="text-xs text-gray-400 font-orbitron uppercase">Combo 連擊</div>
+                    <div id="hud-combo" class="text-3xl font-black font-orbitron text-fuchsia-400 neon-glow-pink">0</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-xs text-gray-400 font-orbitron uppercase">Highest 最高分</div>
+                    <div id="hud-highscore" class="text-3xl font-black font-orbitron text-emerald-400">0</div>
+                </div>
+            </div>
+
+            <!-- Game Display Stage -->
+            <div class="relative w-full aspect-video bg-gray-950 border-2 border-gray-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center justify-between p-6" id="stage-container">
+                
+                <!-- Game Canvas Layer for Particles/Effects -->
+                <canvas id="game-canvas" class="absolute inset-0 w-full h-full pointer-events-none z-10"></canvas>
+
+                <!-- Top Prompt Header -->
+                <div class="z-20 text-center w-full">
+                    <div id="stage-status-badge" class="inline-block px-4 py-1 rounded-full text-xs font-bold tracking-widest uppercase bg-gray-800 text-gray-300 border border-gray-700 mb-2">
+                        READY TO PLAY
+                    </div>
+                    <div id="instruction-title" class="text-2xl md:text-3xl font-black tracking-wide text-white">
+                        點擊右側「啟動遊戲與模型」開始遊戲
+                    </div>
+                </div>
+
+                <!-- Center Giant Target Visual Indicator -->
+                <div class="z-20 flex flex-col items-center justify-center my-auto">
+                    <div id="target-card" class="w-44 h-44 md:w-52 md:h-52 rounded-3xl border-4 border-dashed border-gray-700 bg-gray-900/60 backdrop-blur flex flex-col items-center justify-center transition-all duration-300 transform">
+                        <i id="target-icon" class="fa-solid fa-gamepad text-5xl md:text-6xl text-gray-600 mb-2"></i>
+                        <span id="target-label" class="text-2xl font-black font-orbitron text-gray-400">WAITING</span>
+                    </div>
+                </div>
+
+                <!-- Bottom Progress Bar & State Feedback -->
+                <div class="z-20 w-full max-w-xl space-y-2">
+                    <div class="flex justify-between items-center text-xs font-orbitron font-bold">
+                        <span id="progress-label" class="text-gray-400">ACCUMULATOR (1.0s Window)</span>
+                        <span id="progress-percent" class="text-cyan-400">0%</span>
+                    </div>
+                    
+                    <!-- Charge Progress Bar Container -->
+                    <div class="w-full h-6 bg-gray-900 border border-gray-700 rounded-xl overflow-hidden p-1 relative">
+                        <!-- Threshold Line Indicator at 75% -->
+                        <div class="absolute top-0 bottom-0 left-[75%] w-0.5 bg-yellow-400/80 z-10" title="75% Success Threshold"></div>
+                        <!-- Progress Fill -->
+                        <div id="charge-bar-fill" class="h-full bg-gradient-to-r from-cyan-500 to-fuchsia-500 rounded-lg transition-all duration-75 w-0"></div>
+                    </div>
+
+                    <!-- Reset Gate Warning Bar -->
+                    <div id="reset-gate-banner" class="hidden w-full py-2 bg-yellow-500/20 border border-yellow-500/50 rounded-xl text-center text-yellow-300 text-sm font-bold animate-pulse-fast">
+                        <i class="fa-solid fa-hand-dots mr-2"></i> 請放下雙手！等待歸零門檻 (400ms)...
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Keyboard & Test Simulator Panel -->
+            <div class="bg-gray-900/70 border border-gray-800 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div class="text-xs text-gray-400">
+                    <span class="font-bold text-gray-200"><i class="fa-solid fa-keyboard mr-1 text-cyan-400"></i> 無相機/鍵盤模擬：</span> 
+                    按 <kbd class="px-2 py-1 bg-gray-800 rounded text-cyan-400 border border-gray-700 font-mono">←</kbd> 左手 | 
+                    按 <kbd class="px-2 py-1 bg-gray-800 rounded text-fuchsia-400 border border-gray-700 font-mono">→</kbd> 右手 | 
+                    按 <kbd class="px-2 py-1 bg-gray-800 rounded text-yellow-400 border border-gray-700 font-mono">↓</kbd> 放手
+                </div>
+                <div class="flex gap-2">
+                    <button id="sim-left-btn" class="px-3 py-1.5 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-bold transition active:scale-95">
+                        模擬舉左手 (Hold)
+                    </button>
+                    <button id="sim-right-btn" class="px-3 py-1.5 bg-fuchsia-950/80 hover:bg-fuchsia-900 border border-fuchsia-500/40 text-fuchsia-300 rounded-lg text-xs font-bold transition active:scale-95">
+                        模擬舉右手 (Hold)
+                    </button>
+                    <button id="sim-none-btn" class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 rounded-lg text-xs font-bold transition active:scale-95">
+                        放手 (None)
+                    </button>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Right Column: Model Control & Webcam View (4 cols) -->
+        <section class="lg:col-span-4 flex flex-col gap-4">
+            
+            <!-- Webcam Monitor Box -->
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-col gap-3">
+                <div class="flex items-center justify-between border-b border-gray-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-camera text-cyan-400"></i>
+                        <h2 class="font-bold text-sm font-orbitron">WEBCAM MONITOR</h2>
+                    </div>
+                    <span id="model-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-800 text-gray-400 border border-gray-700">
+                        模型未載入
+                    </span>
+                </div>
+
+                <!-- Quick Model URL Input Field -->
+                <div class="space-y-1 bg-black/50 p-2.5 rounded-xl border border-gray-800">
+                    <label class="block text-[11px] font-bold text-cyan-400 flex items-center justify-between">
+                        <span><i class="fa-solid fa-link"></i> 模型網址 (Model URL)：</span>
+                        <a href="https://teachablemachine.withgoogle.com/train/image" target="_blank" class="text-fuchsia-400 hover:underline text-[10px]">建立/導出模型 <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+                    </label>
+                    <input id="quick-model-url" type="text" 
+                           placeholder="https://teachablemachine.withgoogle.com/models/XXXXX/" 
+                           value="https://teachablemachine.withgoogle.com/models/Cei5vHTL0/" 
+                           class="w-full bg-gray-950 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-cyan-300 focus:outline-none focus:border-cyan-400 font-mono">
+                </div>
+
+                <!-- Video Element & WebCam Container -->
+                <div class="relative aspect-square w-full bg-black rounded-xl overflow-hidden border border-gray-800 flex items-center justify-center">
+                    <div id="webcam-container" class="w-full h-full flex items-center justify-center relative">
+                        <video id="webcam-video" class="hidden w-full h-full object-cover rounded-xl -scale-x-100" autoplay playsinline muted></video>
+                        <div id="webcam-placeholder" class="text-center p-4 text-gray-500">
+                            <i class="fa-solid fa-video-slash text-4xl mb-2"></i>
+                            <p class="text-xs">攝影機尚未啟動</p>
+                            <p class="text-[10px] text-gray-400 mt-1">點擊下方「啟動遊戲與模型」授權鏡頭</p>
+                        </div>
+                    </div>
+                    <!-- Overlay Current Active Prediction Class -->
+                    <div id="prediction-pill" class="absolute bottom-2 left-2 right-2 bg-gray-950/90 backdrop-blur border border-gray-700 rounded-lg py-1.5 px-3 flex items-center justify-between text-xs font-bold z-10">
+                        <span class="text-gray-400">當前最高判斷：</span>
+                        <span id="current-prediction-text" class="text-cyan-400 font-orbitron">無 (0%)</span>
+                    </div>
+                </div>
+
+                <!-- Start Webcam / Load Model Button -->
+                <button id="start-game-btn" class="w-full py-3 bg-gradient-to-r from-cyan-500 to-fuchsia-600 hover:from-cyan-400 hover:to-fuchsia-500 text-black font-black rounded-xl shadow-lg transition transform active:scale-95 flex items-center justify-center gap-2 text-base">
+                    <i class="fa-solid fa-play"></i>
+                    <span>啟動遊戲與模型</span>
+                </button>
+            </div>
+
+            <!-- Dynamic Model Mapping Panel -->
+            <div id="label-mapping-panel" class="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-col gap-3">
+                <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+                    <h3 class="text-xs font-bold text-gray-300 uppercase tracking-wider font-orbitron flex items-center gap-1.5">
+                        <i class="fa-solid fa-sliders text-fuchsia-400"></i> 模型類別對應設定 (Class Mapping)
+                    </h3>
+                </div>
+                <p class="text-[11px] text-gray-400">系統會自動依名稱比對，如有誤可手動選擇對應的 Class：</p>
+
+                <div class="grid grid-cols-1 gap-2 text-xs">
+                    <div class="flex items-center justify-between bg-black/40 p-2 rounded-lg border border-gray-800">
+                        <span class="text-cyan-400 font-bold"><i class="fa-solid fa-hand-back-fist mr-1"></i> 舉左手 (LEFT)：</span>
+                        <select id="select-map-left" class="bg-gray-900 border border-gray-700 text-cyan-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-cyan-400">
+                            <option value="">自動偵測 (Auto)</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center justify-between bg-black/40 p-2 rounded-lg border border-gray-800">
+                        <span class="text-fuchsia-400 font-bold"><i class="fa-solid fa-hand-back-fist mr-1"></i> 舉右手 (RIGHT)：</span>
+                        <select id="select-map-right" class="bg-gray-900 border border-gray-700 text-fuchsia-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-fuchsia-400">
+                            <option value="">自動偵測 (Auto)</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center justify-between bg-black/40 p-2 rounded-lg border border-gray-800">
+                        <span class="text-yellow-400 font-bold"><i class="fa-solid fa-hand mr-1"></i> 沒有舉手 (NONE)：</span>
+                        <select id="select-map-none" class="bg-gray-900 border border-gray-700 text-yellow-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-yellow-400">
+                            <option value="">自動偵測 (Auto)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time Probabilities Container -->
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-col gap-3">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider font-orbitron border-b border-gray-800 pb-2">
+                    即時模型信心度 (Live Probabilities)
+                </h3>
+                
+                <div id="dynamic-labels-container" class="space-y-2 text-xs">
+                    <p class="text-gray-500 text-center py-2 text-xs">尚未載入模型，請先點擊上方「啟動遊戲與模型」</p>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Sound & Canvas Particles Engine -->
+    <script>
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContextClass) {
+                        this.ctx = new AudioContextClass();
+                    }
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            playChargeTone(progress) {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(200 + progress * 400, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(0.02, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.08);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.08);
+                } catch(e) {}
+            }
+
+            playHitSound() {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.2);
+                    gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.2);
+
+                    const chime = this.ctx.createOscillator();
+                    const chimeGain = this.ctx.createGain();
+                    chime.type = 'sine';
+                    chime.frequency.setValueAtTime(880, this.ctx.currentTime);
+                    chime.frequency.setValueAtTime(1320, this.ctx.currentTime + 0.08);
+                    chimeGain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                    chimeGain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.3);
+                    chime.connect(chimeGain);
+                    chimeGain.connect(this.ctx.destination);
+                    chime.start();
+                    chime.stop(this.ctx.currentTime + 0.3);
+                } catch(e) {}
+            }
+
+            playResetUnlockSound() {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, this.ctx.currentTime);
+                    osc.frequency.setValueAtTime(659.25, this.ctx.currentTime + 0.05);
+                    gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.15);
+                } catch(e) {}
+            }
+        }
+
+        const sound = new SoundEngine();
+
+        // Canvas Particle Effects
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+
+        function resizeCanvas() {
+            if (canvas && canvas.parentElement) {
+                canvas.width = canvas.parentElement.clientWidth;
+                canvas.height = canvas.parentElement.clientHeight;
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function spawnBurst(color) {
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            for (let i = 0; i < 40; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 3 + Math.random() * 9;
+                particles.push({
+                    x: centerX,
+                    y: centerY,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    radius: 4 + Math.random() * 6,
+                    color: color,
+                    alpha: 1,
+                    decay: 0.02 + Math.random() * 0.03
+                });
+            }
+        }
+
+        function updateCanvasParticles() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.alpha -= p.decay;
+                if (p.alpha <= 0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+                ctx.save();
+                ctx.globalAlpha = p.alpha;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+            requestAnimationFrame(updateCanvasParticles);
+        }
+        requestAnimationFrame(updateCanvasParticles);
+    </script>
+
+    <!-- Teachable Machine AI Model & Game Logic Core -->
+    <script>
+        // Game Configurations
+        let MODEL_URL = "https://teachablemachine.withgoogle.com/models/Cei5vHTL0/";
+        const WINDOW_SIZE = 30; // 30 frames ~= 1.0 second at 30fps
+        const SUCCESS_THRESHOLD = 0.75; // 75% match ratio threshold
+        const RESET_REQUIRED_FRAMES = 12; // 12 frames ~= 400ms of "NONE" required to reset gate
+
+        // Global State Variables
+        let model = null;
+        let modelType = 'auto'; // 'image' or 'pose'
+        let isWebcamReady = false;
+        let isGameRunning = false;
+        let modelClassLabels = [];
+        let score = 0;
+        let combo = 0;
+        let highscore = 0;
+
+        // Current Target: 'LEFT' or 'RIGHT'
+        let currentTarget = 'LEFT'; 
+
+        // State Machine States: 'WAITING_INPUT', 'RESETTING_GATE'
+        let gameState = 'WAITING_INPUT'; 
+
+        // Sliding Window Array storing frame prediction history
+        let predictionWindow = [];
+        let consecutiveNoHandFrames = 0;
+
+        // Simulated Gesture Override
+        let simulatedPrediction = null;
+
+        // Dedicated Offscreen 224x224 Crop Canvas for AI Input
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = 224;
+        cropCanvas.height = 224;
+        const cropCtx = cropCanvas.getContext('2d');
+
+        // Custom Notification Bar Helper
+        function showNotification(msg, type = 'warning') {
+            const bar = document.getElementById('status-notification-bar');
+            const textEl = document.getElementById('notification-text');
+            if (!bar || !textEl) return;
+
+            bar.classList.remove('hidden', 'bg-yellow-950/80', 'border-yellow-600', 'text-yellow-300', 'bg-red-950/80', 'border-red-600', 'text-red-300', 'bg-emerald-950/80', 'border-emerald-600', 'text-emerald-300');
+            
+            if (type === 'error') {
+                bar.classList.add('bg-red-950/80', 'border-red-600', 'text-red-300');
+                textEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-base"></i> <span>${msg}</span>`;
+            } else if (type === 'success') {
+                bar.classList.add('bg-emerald-950/80', 'border-emerald-600', 'text-emerald-300');
+                textEl.innerHTML = `<i class="fa-solid fa-circle-check text-base"></i> <span>${msg}</span>`;
+            } else {
+                bar.classList.add('bg-yellow-950/80', 'border-yellow-600', 'text-yellow-300');
+                textEl.innerHTML = `<i class="fa-solid fa-circle-info text-base"></i> <span>${msg}</span>`;
+            }
+        }
+
+        // Class Mapping Normalization Logic
+        function normalizeClassName(className) {
+            const userLeft = document.getElementById('select-map-left')?.value;
+            const userRight = document.getElementById('select-map-right')?.value;
+            const userNone = document.getElementById('select-map-none')?.value;
+
+            if (userLeft && className === userLeft) return 'LEFT';
+            if (userRight && className === userRight) return 'RIGHT';
+            if (userNone && className === userNone) return 'NONE';
+
+            // Automatic Fuzzy Matching Fallback
+            const name = className.toLowerCase();
+            if (name.includes('左') || name.includes('left') || name.includes('class 1') || name.includes('1')) return 'LEFT';
+            if (name.includes('右') || name.includes('right') || name.includes('class 2') || name.includes('2')) return 'RIGHT';
+            if (name.includes('無') || name.includes('沒有') || name.includes('none') || name.includes('no hand') || name.includes('bg') || name.includes('background') || name.includes('0')) return 'NONE';
+
+            return 'NONE';
+        }
+
+        function populateMappingDropdowns() {
+            const leftSel = document.getElementById('select-map-left');
+            const rightSel = document.getElementById('select-map-right');
+            const noneSel = document.getElementById('select-map-none');
+
+            if (!leftSel || !rightSel || !noneSel) return;
+
+            [leftSel, rightSel, noneSel].forEach(select => {
+                select.innerHTML = '<option value="">自動偵測 (Auto)</option>';
+                modelClassLabels.forEach(label => {
+                    const opt = document.createElement('option');
+                    opt.value = label;
+                    opt.textContent = label;
+                    select.appendChild(opt);
+                });
+            });
+        }
+
+        function buildDynamicProbabilitiesUI() {
+            const container = document.getElementById('dynamic-labels-container');
+            if (!container) return;
+
+            container.innerHTML = '';
+            modelClassLabels.forEach((label, idx) => {
+                const norm = normalizeClassName(label);
+                let badgeColor = 'text-gray-400 bg-gray-800';
+                if (norm === 'LEFT') badgeColor = 'text-cyan-400 bg-cyan-950/80 border-cyan-700/50';
+                if (norm === 'RIGHT') badgeColor = 'text-fuchsia-400 bg-fuchsia-950/80 border-fuchsia-700/50';
+                if (norm === 'NONE') badgeColor = 'text-yellow-400 bg-yellow-950/80 border-yellow-700/50';
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'space-y-1 bg-black/40 p-2 rounded-lg border border-gray-800';
+                wrapper.innerHTML = `
+                    <div class="flex justify-between items-center text-[11px]">
+                        <span class="font-bold text-gray-200 flex items-center gap-1.5">
+                            <span class="px-1.5 py-0.5 rounded border text-[9px] ${badgeColor}">${norm}</span>
+                            ${label}
+                        </span>
+                        <span id="prob-val-${idx}" class="font-orbitron text-cyan-400 font-bold">0.00</span>
+                    </div>
+                    <div class="w-full bg-gray-950 h-2 rounded-full overflow-hidden p-0.5 border border-gray-800">
+                        <div id="prob-bar-${idx}" class="bg-gradient-to-r from-cyan-500 to-fuchsia-500 h-full rounded-full transition-all duration-75 w-0"></div>
+                    </div>
+                `;
+                container.appendChild(wrapper);
+            });
+        }
+
+        // Load Teachable Machine AI Model
+        async function loadModel() {
+            const badge = document.getElementById('model-badge');
+            if (badge) {
+                badge.innerText = "載入中...";
+                badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-900/60 text-yellow-300 border border-yellow-700 animate-pulse";
+            }
+
+            try {
+                let formattedUrl = MODEL_URL;
+                if (!formattedUrl.endsWith('/')) formattedUrl += '/';
+
+                const modelURL = formattedUrl + "model.json";
+                const metadataURL = formattedUrl + "metadata.json";
+
+                // Check metadata to auto-detect Pose vs Image model
+                try {
+                    const metaRes = await fetch(metadataURL);
+                    if (metaRes.ok) {
+                        const meta = await metaRes.json();
+                        if (meta.package && meta.package.includes('pose')) {
+                            modelType = 'pose';
+                        } else if (meta.userAppName && meta.userAppName.toLowerCase().includes('pose')) {
+                            modelType = 'pose';
+                        }
+                    }
+                } catch(e) {
+                    console.log("Metadata check skipped:", e);
+                }
+
+                if (modelType === 'pose') {
+                    model = await tmPose.load(modelURL, metadataURL);
+                } else {
+                    try {
+                        model = await tmImage.load(modelURL, metadataURL);
+                        modelType = 'image';
+                    } catch(err) {
+                        console.warn("tmImage load failed, attempting tmPose fallback...", err);
+                        model = await tmPose.load(modelURL, metadataURL);
+                        modelType = 'pose';
+                    }
+                }
+
+                modelClassLabels = model.getClassLabels();
+
+                if (badge) {
+                    badge.innerText = `模型加載完成 (${modelType.toUpperCase()} - ${modelClassLabels.length} Classes)`;
+                    badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700";
+                }
+
+                populateMappingDropdowns();
+                buildDynamicProbabilitiesUI();
+
+                showNotification(`模型成功載入！引擎型態：[${modelType.toUpperCase()}]，類別：[${modelClassLabels.join(', ')}]`, 'success');
+                return true;
+            } catch (err) {
+                console.error("Model load error:", err);
+                if (badge) {
+                    badge.innerText = "模型載入失敗";
+                    badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-red-900/60 text-red-300 border border-red-700";
+                }
+                showNotification(`模型載入失敗！請確認網址是否正確。(${err.message || err})`, 'error');
+                return false;
+            }
+        }
+
+        // Setup Webcam Stream
+        async function setupWebcam() {
+            const video = document.getElementById('webcam-video');
+            const placeholder = document.getElementById('webcam-placeholder');
+            
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("BROWSER_NOT_SUPPORTED");
+                }
+
+                if (video && video.srcObject) {
+                    const tracks = video.srcObject.getTracks();
+                    tracks.forEach(track => track.stop());
+                }
+
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: "user"
+                    },
+                    audio: false
+                });
+
+                if (video) {
+                    video.srcObject = stream;
+                    await new Promise((resolve) => {
+                        video.onloadedmetadata = () => {
+                            video.play().catch(e => console.log("Play interrupted", e));
+                            resolve();
+                        };
+                    });
+                    video.classList.remove('hidden');
+                }
+
+                if (placeholder) placeholder.classList.add('hidden');
+                isWebcamReady = true;
+                showNotification("攝影機成功啟動！畫面正常擷取中。", "success");
+            } catch (err) {
+                console.warn("Webcam access failed:", err);
+                isWebcamReady = false;
+                if (video) video.classList.add('hidden');
+                
+                let errorTitle = "無法啟用攝影機";
+                let errorDesc = "請檢查瀏覽器設定或鏡頭連接。您可以隨時點擊畫面按鈕或使用鍵盤 (←/→/↓) 進行測試。";
+
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    errorTitle = "攝影機權限遭拒絕";
+                    errorDesc = "請點擊網址列左側鎖頭 🔒 允許相機權限後重試。";
+                }
+
+                if (placeholder) {
+                    placeholder.classList.remove('hidden');
+                    placeholder.innerHTML = `
+                        <div class="text-center p-3 text-red-400 space-y-2">
+                            <i class="fa-solid fa-camera text-3xl text-red-500 animate-pulse"></i>
+                            <p class="text-xs font-bold">${errorTitle}</p>
+                            <p class="text-[10px] text-gray-400 leading-relaxed">${errorDesc}</p>
+                            <button id="retry-webcam-btn" class="mt-2 px-3 py-1.5 bg-red-950 hover:bg-red-900 text-red-200 border border-red-600 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 mx-auto active:scale-95">
+                                <i class="fa-solid fa-rotate-right"></i> 重新授權 / 嘗試啟動鏡頭
+                            </button>
+                        </div>
+                    `;
+                    const retryBtn = document.getElementById('retry-webcam-btn');
+                    if (retryBtn) {
+                        retryBtn.onclick = () => setupWebcam();
+                    }
+                }
+                showNotification(`${errorTitle}：${errorDesc}`, "error");
+            }
+        }
+
+        let predictionErrorCount = 0;
+
+        // Main AI & Game Animation Loop
+        async function gameLoop() {
+            if (!isGameRunning) return;
+
+            let rawPredictions = [];
+
+            if (simulatedPrediction) {
+                modelClassLabels.forEach(label => {
+                    const norm = normalizeClassName(label);
+                    rawPredictions.push({
+                        className: label,
+                        probability: norm === simulatedPrediction ? 0.98 : 0.01
+                    });
+                });
+            } else if (isWebcamReady) {
+                const video = document.getElementById('webcam-video');
+                try {
+                    if (model && video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+                        const vw = video.videoWidth;
+                        const vh = video.videoHeight;
+                        const minDim = Math.min(vw, vh);
+                        const sx = (vw - minDim) / 2;
+                        const sy = (vh - minDim) / 2;
+
+                        cropCtx.drawImage(video, sx, sy, minDim, minDim, 0, 0, 224, 224);
+                        
+                        if (modelType === 'pose') {
+                            const { pose, posenetOutput } = await model.estimatePose(cropCanvas);
+                            if (posenetOutput) {
+                                rawPredictions = await model.predict(posenetOutput);
+                            }
+                        } else {
+                            rawPredictions = await model.predict(cropCanvas);
+                        }
+                    }
+                } catch(e) {
+                    if (e.message && (e.message.includes('2 dimension') || e.message.includes('dense'))) {
+                        console.warn("Switching engine to POSE model due to shape error...");
+                        modelType = 'pose';
+                        let formattedUrl = MODEL_URL;
+                        if (!formattedUrl.endsWith('/')) formattedUrl += '/';
+                        model = await tmPose.load(formattedUrl + "model.json", formattedUrl + "metadata.json");
+                    } else {
+                        predictionErrorCount++;
+                        if (predictionErrorCount === 1) {
+                            console.error("AI Prediction loop error:", e);
+                            showNotification("AI 運算發生錯誤：" + (e.message || e), "error");
+                        }
+                    }
+                }
+            }
+
+            let highestClassNormalized = 'NONE';
+            let highestProb = 0;
+            let highestRawName = 'NONE';
+
+            if (rawPredictions && rawPredictions.length > 0) {
+                rawPredictions.forEach((pred, idx) => {
+                    const normalized = normalizeClassName(pred.className);
+                    const prob = pred.probability;
+
+                    const valEl = document.getElementById(`prob-val-${idx}`);
+                    const barEl = document.getElementById(`prob-bar-${idx}`);
+                    if (valEl) valEl.innerText = prob.toFixed(2);
+                    if (barEl) barEl.style.width = `${Math.round(prob * 100)}%`;
+
+                    if (prob > highestProb) {
+                        highestProb = prob;
+                        highestClassNormalized = normalized;
+                        highestRawName = pred.className;
+                    }
+                });
+            }
+
+            if (highestProb < 0.60) {
+                highestClassNormalized = 'NONE';
+            }
+
+            const predPill = document.getElementById('current-prediction-text');
+            if (predPill) {
+                predPill.innerText = (rawPredictions && rawPredictions.length > 0) ? `${highestRawName} (${Math.round(highestProb * 100)}%)` : '等待影像中...';
+            }
+
+            updateStateMachine(highestClassNormalized);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // State Machine Update Function
+        function updateStateMachine(detectedClass) {
+            predictionWindow.push(detectedClass);
+            if (predictionWindow.length > WINDOW_SIZE) {
+                predictionWindow.shift();
+            }
+
+            if (gameState === 'RESETTING_GATE') {
+                if (detectedClass === 'NONE') {
+                    consecutiveNoHandFrames++;
+                } else {
+                    consecutiveNoHandFrames = Math.max(0, consecutiveNoHandFrames - 1);
+                }
+
+                if (consecutiveNoHandFrames >= RESET_REQUIRED_FRAMES) {
+                    gameState = 'WAITING_INPUT';
+                    predictionWindow = [];
+                    consecutiveNoHandFrames = 0;
+                    
+                    sound.playResetUnlockSound();
+                    pickNextTarget();
+                    
+                    const gateBanner = document.getElementById('reset-gate-banner');
+                    if (gateBanner) gateBanner.classList.add('hidden');
+                }
+                updateUI();
+                return;
+            }
+
+            if (gameState === 'WAITING_INPUT') {
+                const targetMatches = predictionWindow.filter(c => c === currentTarget).length;
+                const ratio = targetMatches / WINDOW_SIZE;
+
+                if (ratio > 0.3) {
+                    sound.playChargeTone(ratio);
+                }
+
+                if (ratio >= SUCCESS_THRESHOLD) {
+                    triggerTargetSuccess();
+                }
+
+                updateUI(ratio);
+            }
+        }
+
+        function triggerTargetSuccess() {
+            score += 100 + (combo * 20);
+            combo += 1;
+            if (score > highscore) highscore = score;
+            
+            sound.playHitSound();
+            spawnBurst(currentTarget === 'LEFT' ? '#06b6d4' : '#ec4899');
+
+            gameState = 'RESETTING_GATE';
+            consecutiveNoHandFrames = 0;
+            predictionWindow = [];
+
+            const gateBanner = document.getElementById('reset-gate-banner');
+            if (gateBanner) gateBanner.classList.remove('hidden');
+        }
+
+        function pickNextTarget() {
+            const options = ['LEFT', 'RIGHT'];
+            if (Math.random() < 0.7) {
+                currentTarget = currentTarget === 'LEFT' ? 'RIGHT' : 'LEFT';
+            } else {
+                currentTarget = options[Math.floor(Math.random() * options.length)];
+            }
+        }
+
+        function updateUI(ratio = 0) {
+            const scoreEl = document.getElementById('hud-score');
+            const comboEl = document.getElementById('hud-combo');
+            const highscoreEl = document.getElementById('hud-highscore');
+            if (scoreEl) scoreEl.innerText = score;
+            if (comboEl) comboEl.innerText = combo;
+            if (highscoreEl) highscoreEl.innerText = highscore;
+
+            const targetCard = document.getElementById('target-card');
+            const targetIcon = document.getElementById('target-icon');
+            const targetLabel = document.getElementById('target-label');
+            const statusBadge = document.getElementById('stage-status-badge');
+            const instructionTitle = document.getElementById('instruction-title');
+            const chargeBar = document.getElementById('charge-bar-fill');
+            const progressPercent = document.getElementById('progress-percent');
+
+            if (!targetCard || !targetIcon || !targetLabel || !statusBadge || !instructionTitle) return;
+
+            if (gameState === 'RESETTING_GATE') {
+                statusBadge.innerText = "WAITING FOR RESET";
+                statusBadge.className = "inline-block px-4 py-1 rounded-full text-xs font-bold tracking-widest uppercase bg-yellow-900/60 text-yellow-300 border border-yellow-600";
+                instructionTitle.innerText = "請將雙手放下 (RESET)...";
+                
+                targetCard.className = "w-44 h-44 md:w-52 md:h-52 rounded-3xl border-4 border-yellow-500 bg-yellow-950/40 backdrop-blur flex flex-col items-center justify-center animate-pulse";
+                targetIcon.className = "fa-solid fa-hand text-5xl md:text-6xl text-yellow-400 mb-2";
+                targetLabel.className = "text-2xl font-black font-orbitron text-yellow-300";
+                targetLabel.innerText = "RESET";
+
+                if (chargeBar) chargeBar.style.width = `0%`;
+                if (progressPercent) progressPercent.innerText = `0%`;
+                return;
+            }
+
+            if (gameState === 'WAITING_INPUT') {
+                statusBadge.innerText = "ACTION INSTRUCTION";
+                statusBadge.className = "inline-block px-4 py-1 rounded-full text-xs font-bold tracking-widest uppercase bg-cyan-900/60 text-cyan-300 border border-cyan-600";
+                
+                if (currentTarget === 'LEFT') {
+                    instructionTitle.innerText = "維持「舉左手」姿勢 1 秒！";
+                    targetCard.className = "w-44 h-44 md:w-52 md:h-52 rounded-3xl border-4 border-cyan-400 box-glow-cyan bg-cyan-950/40 backdrop-blur flex flex-col items-center justify-center transform scale-105 transition-all";
+                    targetIcon.className = "fa-solid fa-arrow-left text-5xl md:text-6xl text-cyan-400 mb-2 animate-bounce";
+                    targetLabel.className = "text-2xl font-black font-orbitron text-cyan-400 neon-glow-cyan";
+                    targetLabel.innerText = "舉左手";
+                } else {
+                    instructionTitle.innerText = "維持「舉右手」姿勢 1 秒！";
+                    targetCard.className = "w-44 h-44 md:w-52 md:h-52 rounded-3xl border-4 border-fuchsia-400 box-glow-pink bg-fuchsia-950/40 backdrop-blur flex flex-col items-center justify-center transform scale-105 transition-all";
+                    targetIcon.className = "fa-solid fa-arrow-right text-5xl md:text-6xl text-fuchsia-400 mb-2 animate-bounce";
+                    targetLabel.className = "text-2xl font-black font-orbitron text-fuchsia-400 neon-glow-pink";
+                    targetLabel.innerText = "舉右手";
+                }
+
+                const percent = Math.min(100, Math.round(ratio * 100));
+                if (chargeBar) chargeBar.style.width = `${percent}%`;
+                if (progressPercent) progressPercent.innerText = `${percent}%`;
+            }
+        }
+
+        // Start Game Event Listener
+        document.getElementById('start-game-btn').addEventListener('click', async () => {
+            sound.init();
+            predictionErrorCount = 0;
+            
+            const quickInput = document.getElementById('quick-model-url');
+            if (quickInput && quickInput.value.trim()) {
+                let url = quickInput.value.trim();
+                if (!url.endsWith('/')) url += '/';
+                MODEL_URL = url;
+            }
+
+            const btn = document.getElementById('start-game-btn');
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 載入中...`;
+
+            const loaded = await loadModel();
+            await setupWebcam();
+
+            isGameRunning = true;
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> 重新下載與啟動`;
+            btn.className = "w-full py-3 bg-gray-800 hover:bg-gray-700 text-cyan-300 font-bold rounded-xl border border-cyan-500/40 shadow-lg flex items-center justify-center gap-2";
+
+            gameLoop();
+        });
+
+        // Initialize Input Value
+        window.addEventListener('DOMContentLoaded', () => {
+            const quickInput = document.getElementById('quick-model-url');
+            if (quickInput) quickInput.value = MODEL_URL;
+        });
+
+        // Keyboard Gesture Simulation Listeners
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') simulatedPrediction = 'LEFT';
+            if (e.key === 'ArrowRight') simulatedPrediction = 'RIGHT';
+            if (e.key === 'ArrowDown') simulatedPrediction = 'NONE';
+        });
+
+        window.addEventListener('keyup', () => {
+            simulatedPrediction = null;
+        });
+
+        // On-screen Simulation Button Listeners
+        const bindSimBtn = (id, gesture) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.addEventListener('mousedown', () => simulatedPrediction = gesture);
+            btn.addEventListener('mouseup', () => simulatedPrediction = null);
+            btn.addEventListener('mouseleave', () => simulatedPrediction = null);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); simulatedPrediction = gesture; });
+            btn.addEventListener('touchend', () => simulatedPrediction = null);
+        };
+        bindSimBtn('sim-left-btn', 'LEFT');
+        bindSimBtn('sim-right-btn', 'RIGHT');
+        bindSimBtn('sim-none-btn', 'NONE');
+
+        // Audio Toggle Switch
+        document.getElementById('audio-toggle').addEventListener('click', () => {
+            sound.enabled = !sound.enabled;
+            document.getElementById('audio-status').innerText = sound.enabled ? "音效開啟" : "音效靜音";
+            document.getElementById('audio-icon').className = sound.enabled ? "fa-solid fa-volume-high text-cyan-400" : "fa-solid fa-volume-xmark text-gray-500";
+        });
+
+        // Scroll to Settings Panel
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            const panel = document.getElementById('label-mapping-panel');
+            if (panel) panel.scrollIntoView({ behavior: 'smooth' });
+        });
+    </script>
+</body>
+</html>
